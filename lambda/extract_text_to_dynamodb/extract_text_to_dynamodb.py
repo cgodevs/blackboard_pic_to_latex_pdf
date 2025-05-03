@@ -11,13 +11,9 @@ def lambda_handler(event, context):
 
         try:
             response = s3_client.head_object(Bucket=bucket_name, Key=object_key)
-            metadata = response.get("Metadata", {})  # Custom metadata
-            content_type = response.get("ContentType", "")  # Standard metadata
-            content_length = response.get("ContentLength", 0)
-
-            print(f"Custom Metadata: {metadata}")
-            print(f"Content-Type: {content_type}")
-            print(f"Content-Length: {content_length}")
+            last_modified = response.get("LastModified","")
+            # metadata = response.get("Metadata", {})  # Custom metadata
+            print(f"Last Modified: {last_modified}")
 
         except Exception as e:
             print(f"Error fetching metadata: {e}")
