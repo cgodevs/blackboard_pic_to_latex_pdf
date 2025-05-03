@@ -11,7 +11,8 @@ DYNAMODB_PAYLOAD = {
     "user_id": DEFAULT_USER,
     "project_id": DEFAULT_PROJECT,
     "s3_link": "",
-    "creation_timestamp": "",
+    "object_creation_timestamp": "",
+    "record_creation_timestamp": "",
     "text_content": "",
     "tokens_count": "",
     "cost": ""
@@ -20,6 +21,7 @@ DYNAMODB_PAYLOAD = {
 
 def lambda_handler(event, context):
     s3_client = boto3.client('s3')
+    dynamodb_client = boto3.client('dynamodb')
 
     for record in event["Records"]:
         bucket_name = record["s3"]["bucket"]["name"]
@@ -27,11 +29,17 @@ def lambda_handler(event, context):
         DYNAMODB_PAYLOAD["s3_link"] = object_key
         DYNAMODB_PAYLOAD["user_id"] = get_partition_value(object_name=object_key, partition_key="user_id", default_value=DEFAULT_USER)
         DYNAMODB_PAYLOAD["project_id"] = get_partition_value(object_name=object_key, partition_key="project_id", default_value=DEFAULT_PROJECT)
-        DYNAMODB_PAYLOAD["creation_timestamp"] = get_obj_creation_time(s3_client, bucket_name, object_key)
+        DYNAMODB_PAYLOAD["object_creation_timestamp"] = get_obj_creation_time(s3_client, bucket_name, object_key)
         DYNAMODB_PAYLOAD["text_content"], DYNAMODB_PAYLOAD["tokens_count"] = extract_text_from_image(object_key)
         DYNAMODB_PAYLOAD["cost"] = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
+        DYNAMODB_PAYLOAD["record_creation_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        print(DYNAMODB_PAYLOAD)
+        print(map_payload_to_data_types(DYNAMODB_PAYLOAD))
+        dynamodb_client.put_item(
+            TableName='FxBlackboardPicturesData',
+            Item=map_payload_to_data_types(DYNAMODB_PAYLOAD)
+        )
+        print("Successfully inserted record into DynamoDB")
     return DYNAMODB_PAYLOAD
 
 
@@ -58,3 +66,14 @@ def extract_text_from_image(object_key):
 
 def get_text_extraction_cost(tokens_count: int):
     return 0.0
+
+
+def map_payload_to_data_types(payload):
+    numeric_keys = ["tokens_count", "cost"]
+    dynamodb_payload = {}
+    for key, value in payload.items():
+        if key in numeric_keys:
+            dynamodb_payload[key] = {"N": str(value)}
+        else:
+            dynamodb_payload[key] = {"S": str(value)}
+    return dynamodb_payload
