@@ -1,0 +1,17 @@
+# Get on an Ubuntu tab if you're on Windows, try opening a new tab for each command
+wsl -d Ubuntu
+
+# Live trail Lambda Logs from Cloudwatch
+# Cloudwatch Lambda Logs
+aws logs start-live-tail --log-group-identifiers arn:aws:logs:us-east-1:339713058242:log-group:LogsBlackboardToDynamoDBLambda
+
+# Keep reading on the destination table
+# List DynamoDB records
+aws dynamodb scan --table-name FxBlackboardPicturesData --projection-expression "record_creation_timestamp, s3_link, text_content" --output json
+
+# List all object in the main photo bucket
+# List S3 objects
+aws s3 ls s3://fx-blackboard-pictures/user_id=cgodevs/project_id=000001/
+
+# Delete records in DynamoDB by key
+aws dynamodb delete-item --table-name FxBlackboardPicturesData --key '{"user_id": {"S": "cgodevs"}}'

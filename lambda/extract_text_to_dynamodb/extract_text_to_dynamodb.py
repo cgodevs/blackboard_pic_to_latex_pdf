@@ -11,6 +11,7 @@ assert os.getenv("API_KEY") != "", "API_KEY is not set"
 
 DEFAULT_USER = "cgodevs"
 DEFAULT_PROJECT = "000001"
+LLM_MODEL = os.getenv("LLM_MODEL") or "gemini-2.0-flash"
 TOKEN_PRICE = 0.0
 
 DYNAMODB_PAYLOAD = {
@@ -32,20 +33,19 @@ def lambda_handler(event, context):
     for record in event["Records"]:
         bucket_name = record["s3"]["bucket"]["name"]
         object_key = record["s3"]["object"]["key"]
-        DYNAMODB_PAYLOAD["s3_link"] = object_key
-        DYNAMODB_PAYLOAD["user_id"] = get_partition_value(object_name=object_key, partition_key="user_id", default_value=DEFAULT_USER)
-        DYNAMODB_PAYLOAD["project_id"] = get_partition_value(object_name=object_key, partition_key="project_id", default_value=DEFAULT_PROJECT)
-        DYNAMODB_PAYLOAD["object_creation_timestamp"] = get_obj_creation_time(s3_client, bucket_name, object_key)
-        path = save_local_image_from_s3(bucket_name, object_key)
-        DYNAMODB_PAYLOAD["text_content"], DYNAMODB_PAYLOAD["tokens_count"] = extract_text_from_image(path)
-        DYNAMODB_PAYLOAD["cost"] = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
-        DYNAMODB_PAYLOAD["record_creation_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        DYNAMODB_PAYLOAD["s3_link"]                     = f"{bucket_name}/{unquote(object_key)}"
+        DYNAMODB_PAYLOAD["user_id"]                     = get_partition_value(object_name=object_key, partition_key="user_id", default_value=DEFAULT_USER)
+        DYNAMODB_PAYLOAD["project_id"]                  = get_partition_value(object_name=object_key, partition_key="project_id", default_value=DEFAULT_PROJECT)
+        DYNAMODB_PAYLOAD["object_creation_timestamp"]   = get_obj_creation_time(s3_client, bucket_name, object_key)
+        DYNAMODB_PAYLOAD["cost"]                        = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
+        DYNAMODB_PAYLOAD["record_creation_timestamp"]   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        (DYNAMODB_PAYLOAD["text_content"],
+         DYNAMODB_PAYLOAD["tokens_count"])              = extract_text_from_image(local_image_path=save_local_image_from_s3(bucket_name, object_key))
         dynamodb_client.put_item(
             TableName='FxBlackboardPicturesData',
             Item=map_payload_to_data_types(DYNAMODB_PAYLOAD)
         )
         print(DYNAMODB_PAYLOAD)
-        print(map_payload_to_data_types(DYNAMODB_PAYLOAD))
         print("Successfully inserted record into DynamoDB")
     return DYNAMODB_PAYLOAD
 
@@ -86,14 +86,15 @@ def extract_text_from_image(local_image_path):
         client = genai.Client(api_key=os.getenv("API_KEY"))
         my_file = client.files.upload(file=local_image_path)
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=LLM_MODEL,
             contents=[my_file, "Extract text from the image into latex."]
         )
         total_tokens = response.usage_metadata.total_token_count if response.usage_metadata else 0
         pattern = r"```latex(.*?)```"
         matches = re.findall(pattern, response.text, flags=re.S)
         if matches:
-            extracted_text = matches[0].strip()
+            for match in matches:
+                extracted_text += match.strip() + "\n"
         else:
             print("No content matched the expected pattern.")
     except Exception as e:
