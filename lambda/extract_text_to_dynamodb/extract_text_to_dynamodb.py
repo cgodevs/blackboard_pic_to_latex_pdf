@@ -1,7 +1,13 @@
-import openai
+import os
+import re
 import boto3
+import openai
+from google import genai
 from datetime import datetime
 from urllib.parse import unquote
+from botocore.exceptions import ClientError
+
+assert os.getenv("API_KEY") != "", "API_KEY is not set"
 
 DEFAULT_USER = "cgodevs"
 DEFAULT_PROJECT = "000001"
@@ -30,15 +36,16 @@ def lambda_handler(event, context):
         DYNAMODB_PAYLOAD["user_id"] = get_partition_value(object_name=object_key, partition_key="user_id", default_value=DEFAULT_USER)
         DYNAMODB_PAYLOAD["project_id"] = get_partition_value(object_name=object_key, partition_key="project_id", default_value=DEFAULT_PROJECT)
         DYNAMODB_PAYLOAD["object_creation_timestamp"] = get_obj_creation_time(s3_client, bucket_name, object_key)
-        DYNAMODB_PAYLOAD["text_content"], DYNAMODB_PAYLOAD["tokens_count"] = extract_text_from_image(object_key)
+        path = save_local_image_from_s3(bucket_name, object_key)
+        DYNAMODB_PAYLOAD["text_content"], DYNAMODB_PAYLOAD["tokens_count"] = extract_text_from_image(path)
         DYNAMODB_PAYLOAD["cost"] = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
         DYNAMODB_PAYLOAD["record_creation_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        print(map_payload_to_data_types(DYNAMODB_PAYLOAD))
         dynamodb_client.put_item(
             TableName='FxBlackboardPicturesData',
             Item=map_payload_to_data_types(DYNAMODB_PAYLOAD)
         )
+        print(DYNAMODB_PAYLOAD)
+        print(map_payload_to_data_types(DYNAMODB_PAYLOAD))
         print("Successfully inserted record into DynamoDB")
     return DYNAMODB_PAYLOAD
 
@@ -60,8 +67,40 @@ def get_obj_creation_time(s3_client, bucket_name, object_key):
         raise Exception("Error fetching metadata for object creation time. Quitting.")
 
 
-def extract_text_from_image(object_key):
-    return "", 1  # number of tokens
+def save_local_image_from_s3(bucket_name, object_key):
+    s3_client = boto3.client('s3')
+    try:
+        object_key = unquote(object_key)  # Decode key in case it has special characters
+        local_path = f"/tmp/{os.path.basename(object_key)}"  # Save in /tmp directory
+        # Download the image from S3 to a local temporary file
+        s3_client.download_file(bucket_name, object_key, local_path)
+        return local_path
+    except ClientError as e:
+        print(f"Error fetching the image from S3: {e}")
+        raise Exception("Could not download image.")
+
+
+def extract_text_from_image(local_image_path):
+    extracted_text, total_tokens = "", 0
+    try:
+        client = genai.Client(api_key=os.getenv("API_KEY"))
+        my_file = client.files.upload(file=local_image_path)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[my_file, "Extract text from the image into latex."]
+        )
+        total_tokens = response.usage_metadata.total_token_count if response.usage_metadata else 0
+        pattern = r"```latex(.*?)```"
+        matches = re.findall(pattern, response.text, flags=re.S)
+        if matches:
+            extracted_text = matches[0].strip()
+        else:
+            print("No content matched the expected pattern.")
+    except Exception as e:
+        print(f"Error while processing image with GenAI: {e}")
+        raise Exception("GenAI processing failed.")
+    finally:
+        return extracted_text, total_tokens
 
 
 def get_text_extraction_cost(tokens_count: int):
