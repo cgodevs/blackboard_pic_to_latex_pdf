@@ -1,18 +1,18 @@
 import os
 import re
 import boto3
-import openai
 from google import genai
 from datetime import datetime
 from urllib.parse import unquote
 from botocore.exceptions import ClientError
 
 assert os.getenv("API_KEY") != "", "API_KEY is not set"
-
 DEFAULT_USER = "cgodevs"
 DEFAULT_PROJECT = "000001"
 LLM_MODEL = os.getenv("LLM_MODEL") or "gemini-2.0-flash"
 TOKEN_PRICE = 0.0
+TEXT_EXTRACTION_PROMPT = "Extract text from the image into latex."
+
 
 DYNAMODB_PAYLOAD = {
     "user_id": DEFAULT_USER,
@@ -87,7 +87,7 @@ def extract_text_from_image(local_image_path):
         my_file = client.files.upload(file=local_image_path)
         response = client.models.generate_content(
             model=LLM_MODEL,
-            contents=[my_file, "Extract text from the image into latex."]
+            contents=[my_file, TEXT_EXTRACTION_PROMPT]
         )
         total_tokens = response.usage_metadata.total_token_count if response.usage_metadata else 0
         pattern = r"```latex(.*?)```"
