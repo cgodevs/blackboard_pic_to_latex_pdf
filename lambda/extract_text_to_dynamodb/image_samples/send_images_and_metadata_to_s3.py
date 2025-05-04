@@ -33,7 +33,7 @@ def get_image_metadata_dict(directory="."):
     return metadata_dict
 
 
-def upload_to_s3(bucket_name, region_name="us-east-1", directory="."):
+def upload_to_s3(bucket, region_name="us-east-1", directory="."):
 
     s3 = boto3.client("s3", region_name=region_name)
     metadata = get_image_metadata_dict(directory)
@@ -44,13 +44,13 @@ def upload_to_s3(bucket_name, region_name="us-east-1", directory="."):
 
         try:
             s3_metadata = {
-                "image_creation_timestamp": meta.get("DateTime", "None"),
+                "image_creation_timestamp": meta.get("DateTime", None),
                 "user_id": DEFAULT_USER,
                 "project_id": DEFAULT_PROJECT
             }
             s3.upload_file(
                 Filename=file_path,
-                Bucket=bucket_name,
+                Bucket=bucket,
                 Key=f"user_id={DEFAULT_USER}/project_id={DEFAULT_PROJECT}/{filename}",
                 ExtraArgs={
                     "Metadata": s3_metadata
@@ -67,7 +67,29 @@ def upload_to_s3(bucket_name, region_name="us-east-1", directory="."):
             print(f"Failed to upload {filename}: {e}")
 
 
+def delete_all_objects(bucket, region_name="us-east-1"):
+    s3 = boto3.client("s3", region_name=region_name)
+    try:
+        response = s3.list_objects_v2(Bucket=bucket)
+        if "Contents" not in response:
+            print(f"The bucket '{bucket}' is already empty.")
+            return
+        objects = response["Contents"]
+        for obj in objects:
+            object_key = obj["Key"]
+            s3.delete_object(Bucket=bucket, Key=object_key)
+            print(f"Deleted: {object_key}")
+        print(f"All objects deleted from the bucket '{bucket}'.\n")
+    except NoCredentialsError:
+        print("AWS credentials not found. Please configure them using AWS CLI or environment variables.")
+    except PartialCredentialsError:
+        print("Incomplete AWS credentials. Please check your configuration.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 if __name__ == "__main__":
     bucket_name = f"fx-blackboard-pictures"
-    upload_to_s3(bucket_name=bucket_name, directory=".")
+    delete_all_objects(bucket=bucket_name)  # Optional: Comment
+    upload_to_s3(bucket=bucket_name, directory=".")
 

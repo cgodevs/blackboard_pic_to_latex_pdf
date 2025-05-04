@@ -33,14 +33,20 @@ def lambda_handler(event, context):
     for record in event["Records"]:
         bucket_name = record["s3"]["bucket"]["name"]
         object_key = record["s3"]["object"]["key"]
-        DYNAMODB_PAYLOAD["s3_link"]                     = f"{bucket_name}/{unquote(object_key)}"
-        DYNAMODB_PAYLOAD["user_id"]                     = get_partition_value(object_name=object_key, partition_key="user_id", default_value=DEFAULT_USER)
-        DYNAMODB_PAYLOAD["project_id"]                  = get_partition_value(object_name=object_key, partition_key="project_id", default_value=DEFAULT_PROJECT)
-        DYNAMODB_PAYLOAD["object_creation_timestamp"]   = get_obj_creation_time(s3_client, bucket_name, object_key)
-        DYNAMODB_PAYLOAD["cost"]                        = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
+
+        response = get_object_metadata(s3_client, bucket_name, object_key)
+        metadata = response.get("Metadata", {})
+
+        DYNAMODB_PAYLOAD["object_creation_timestamp"]   = response.get("LastModified", "").strftime("%Y-%m-%d %H:%M:%S")
+        DYNAMODB_PAYLOAD["image_creation_timestamp"]    = metadata["image_creation_timestamp"]
         DYNAMODB_PAYLOAD["record_creation_timestamp"]   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        DYNAMODB_PAYLOAD["user_id"]                     = metadata["user_id"] if "user_id" in metadata else DEFAULT_USER
+        DYNAMODB_PAYLOAD["project_id"]                  = metadata["project_id"] if "project_id" in metadata else DEFAULT_PROJECT
+        DYNAMODB_PAYLOAD["s3_link"]                     = f"{bucket_name}/{unquote(object_key)}"
+        DYNAMODB_PAYLOAD["cost"]                        = get_text_extraction_cost(DYNAMODB_PAYLOAD["tokens_count"])
         (DYNAMODB_PAYLOAD["text_content"],
          DYNAMODB_PAYLOAD["tokens_count"])              = extract_text_from_image(local_image_path=save_local_image_from_s3(bucket_name, object_key))
+
         dynamodb_client.put_item(
             TableName='FxBlackboardPicturesData',
             Item=map_payload_to_data_types(DYNAMODB_PAYLOAD)
@@ -50,21 +56,16 @@ def lambda_handler(event, context):
     return DYNAMODB_PAYLOAD
 
 
-def get_partition_value(object_name, partition_key, default_value=""):
-    for item in object_name.split("/"):
-        if partition_key in unquote(item):
-            return unquote(item).split("=")[-1]
-    return default_value
-
-
-def get_obj_creation_time(s3_client, bucket_name, object_key):
+def get_object_metadata(s3_client, bucket_name, object_key):
     try:
         response = s3_client.head_object(Bucket=bucket_name, Key=unquote(object_key))
-        last_modified = response.get("LastModified","")
-        return last_modified.strftime("%Y-%m-%d %H:%M:%S")
+        return response
+    except s3_client.exceptions.NoSuchKey:
+        print(f"Error: Object with key '{object_key}' not found in bucket '{bucket_name}'.")
+    except s3_client.exceptions.NoSuchBucket:
+        print(f"Error: Bucket '{bucket_name}' does not exist.")
     except Exception as e:
-        print(f"Error fetching metadata: {e}")
-        raise Exception("Error fetching metadata for object creation time. Quitting.")
+        print(f"An error occurred: {e}")
 
 
 def save_local_image_from_s3(bucket_name, object_key):
