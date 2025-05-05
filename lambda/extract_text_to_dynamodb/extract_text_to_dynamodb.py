@@ -11,7 +11,9 @@ DEFAULT_USER = "cgodevs"
 DEFAULT_PROJECT = "000001"
 LLM_MODEL = os.getenv("LLM_MODEL") or "gemini-2.0-flash"
 TOKEN_PRICE = 0.0
-TEXT_EXTRACTION_PROMPT = "Extract text from the image into latex."
+TEXT_EXTRACTION_PROMPT = ("Extract text from the image into latex. Ignore drawings or charts."
+                          "You may exclude whatever marks or repetitions there may be, trying to create a concise text."
+                          "Even though you must not add to the original content, you must try to fill possibly identifiable gaps within the text to make it complete.")
 
 
 DYNAMODB_PAYLOAD = {

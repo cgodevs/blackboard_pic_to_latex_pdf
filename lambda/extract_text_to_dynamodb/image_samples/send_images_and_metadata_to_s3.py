@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from PIL import Image
 from PIL.ExifTags import TAGS
 import os
@@ -8,10 +10,6 @@ DEFAULT_USER = "cgodevs"
 DEFAULT_PROJECT = "000001"
 
 def get_image_metadata_dict(directory="."):
-    """
-    Fetch metadata for image files in the given directory and return as a dictionary
-    where keys are filenames, and values are dicts containing 'DateTime' metadata.
-    """
     if not os.path.isdir(directory):
         raise ValueError(f"Error: {directory} is not a valid directory.")
 
@@ -26,6 +24,8 @@ def get_image_metadata_dict(directory="."):
                     if exif_data:
                         exif_dict = {TAGS.get(tag_id, tag_id): value for tag_id, value in exif_data.items()}
                         date_time = exif_dict.get('DateTime', None)
+                        if date_time:
+                            date_time = datetime.strptime(date_time, "%Y:%m:%d %H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
                     metadata_dict[filename] = {"DateTime": date_time}
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")

@@ -1,0 +1,32 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"logs:PutLogEvents",
+				"logs:CreateLogGroup",
+				"logs:CreateLogStream"
+			],
+			"Resource": [
+				"arn:aws:logs:us-east-1:123456789000:log-group:JoinLatexTextLambda",
+				"arn:aws:logs:us-east-1:123456789000:log-group:JoinLatexTextLambda:log-stream:*"
+			]
+		},
+		{
+			"Effect": "Allow",
+			"Action": [ "ecr:*" ],
+			"Resource": "arn:aws:ecr:us-east-1:123456789000:repository/join_latex_text_lambda"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [ "dynamodb:*" ],
+			"Resource": "arn:aws:dynamodb:us-east-1:123456789000:table/FxBlackboardFullFileData"
+		},
+        {
+            "Effect": "Allow",
+            "Action": [ "dynamodb:*"],
+            "Resource": "arn:aws:dynamodb:us-east-1:123456789000:table/FxBlackboardPicturesData"
+        }
+	]
+}
